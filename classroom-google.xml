@@ -1,17 +1,19 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<Module>
+<ModulePrefs title="Resources" />
+<Content type="html"><![CDATA[
+
 <!DOCTYPE html>
 <html lang="en"><head>
 <meta charset="utf-8"/>
 <meta content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" name="viewport"/>
-<script src="/sdk.js"></script>
-<title>Cube Online</title>
+<title>Fortnite</title>
 <style>
 body,html{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:#000;
   overscroll-behavior:none;touch-action:none;user-select:none;-webkit-user-select:none}
 body{display:flex;justify-content:center;align-items:center}
 #canvas{width:100%;height:100%;display:block;touch-action:none;
   -webkit-tap-highlight-color:transparent;outline:0}
-
-/* Loading screen */
 #loading{position:fixed;inset:0;width:100%;height:100%;display:flex;flex-direction:column;
   justify-content:center;align-items:center;z-index:10;touch-action:none;overflow:hidden;
   background:repeating-linear-gradient(0deg,rgba(255,255,255,.012) 0 2px,transparent 2px 4px),
@@ -38,20 +40,17 @@ body{display:flex;justify-content:center;align-items:center}
   font:700 28px/1.4 ui-monospace,Consolas,monospace;text-align:center;letter-spacing:2px}
 </style>
 </head><body>
-
 <div id="loading">
   <div id="progress-bar-wrap"><div id="progress-bar"></div></div>
   <div id="progress-pct">0%</div>
 </div>
 <div id="ad-countdown"><span id="ad-countdown-text"></span></div>
-<canvas id="canvas" oncontextmenu="event.preventDefault()"></canvas>
-
+<canvas id="canvas" tabindex="-1" oncontextmenu="event.preventDefault()"></canvas>
 <script>
-/* ── CDN ── değiştir ──────────────────────────── */
-var CDN        = "BURAYA_CDN";  /* https://cdn.jsdelivr.net/gh/user/repo@hash */
-var WASM_PARTS = 6;  /* 45.8MB / 8MB = 6 parts */             /* PS1 çalıştırınca kaç part yazdıysa onu yaz */
+/* ── CDN ── */
+var CDN = "https://cdn.jsdelivr.net/gh/school-management-google/xvb66@main";
+function U(p){ return CDN.replace(/\/+$/,"") + "/" + p; }
 
-/* ── Yardımcılar ─────────────────────────────── */
 var __fatalShown=false, __started=false;
 function __isRu(){ return "ru"===(navigator.language||"en").slice(0,2); }
 function showFatal(e){
@@ -75,7 +74,7 @@ function setProgress(pct,label){
   if(b) b.style.width=pct+"%";
   if(p) p.textContent=(label||Math.round(pct)+"%");
 }
-document.title=__isRu()?"Куб Онлайн":"Cube Online";
+document.title=__isRu()?"Куб Онлайн":"roblox";
 (function(){
   var e=false;
   try{var n=document.createElement("canvas");
@@ -85,15 +84,93 @@ document.title=__isRu()?"Куб Онлайн":"Cube Online";
     ?"Ваш браузер не поддерживает WebGL — игра не запустится."
     :"Your browser does not support WebGL — the game cannot run.");
 })();
+/* Sandbox/iframe icin zararsiz hatalari yoksay */
+var __IGNORE=/unwind|SimulateInfiniteLoop|pointer\s*lock|pointerlock|sandbox|SecurityError|fullscreen|sdk\.js|NotAllowedError|AbortError|play\(\)/i;
 window.addEventListener("error",function(e){
   var n=e&&e.message||"";
-  if(!/unwind|SimulateInfiniteLoop/i.test(n))
-    showFatal(__isRu()?"Не удалось загрузить игру. Проверьте соединение и обновите страницу."
-                      :"Failed to load the game. Check your connection and reload.");
+  if(__IGNORE.test(n)) return;
+  showFatal(__isRu()?"Не удалось загрузить игру. Проверьте соединение и обновите страницу."
+                    :"Failed to load the game. Check your connection and reload.");
 });
-</script>
+window.addEventListener("unhandledrejection",function(e){
+  var n=(e&&e.reason&&(e.reason.message||e.reason.name))||"";
+  if(__IGNORE.test(String(n))) { e.preventDefault(); }
+},true);
 
-<!-- window.YA — reklam, kayıt, liderboard sistemi (orijinalden aynen) -->
+/* ── Pointer Lock & Fullscreen: iframe icinde izinsiz -> sessizce yut ── */
+(function(){
+  var noop=function(){ return Promise.resolve(); };
+  function guard(obj,key){
+    var orig=obj&&obj[key];
+    if(typeof orig!=="function") return;
+    obj[key]=function(){
+      try{
+        var r=orig.apply(this,arguments);
+        if(r&&typeof r.catch==="function") return r.catch(function(){});
+        return Promise.resolve();
+      }catch(e){ return Promise.resolve(); }
+    };
+  }
+  guard(Element.prototype,"requestPointerLock");
+  guard(Element.prototype,"requestFullscreen");
+  guard(Element.prototype,"webkitRequestFullscreen");
+  guard(Element.prototype,"mozRequestFullScreen");
+  guard(Element.prototype,"msRequestFullscreen");
+  guard(Document.prototype,"exitFullscreen");
+  if(!Element.prototype.requestPointerLock) Element.prototype.requestPointerLock=noop;
+})();
+
+/* ── SAHTE POINTER LOCK ──────────────────────────────────────────────
+   iframe sandbox'ta gercek kilit alinamadigi icin document.pointerLockElement
+   hep null kaliyor -> oyun "Click to play" katmanini kapatmiyor.
+   Burada kilidi taklit edip pointerlockchange olayini kendimiz atiyoruz.
+   Fare bakisi movementX/movementY ile kilitsiz de calisir.            */
+(function(){
+  var faked=false, target=null;
+  var d=Object.getOwnPropertyDescriptor(Document.prototype,"pointerLockElement");
+  var realGet=d&&d.get;
+  try{
+    Object.defineProperty(Document.prototype,"pointerLockElement",{
+      configurable:true,
+      get:function(){
+        if(faked) return target;
+        return realGet?realGet.call(this):null;
+      }
+    });
+  }catch(e){}
+  function fire(){
+    try{ document.dispatchEvent(new Event("pointerlockchange")); }catch(e){}
+    try{ document.dispatchEvent(new Event("mozpointerlockchange")); }catch(e){}
+    try{ document.dispatchEvent(new Event("webkitpointerlockchange")); }catch(e){}
+  }
+  function lock(){
+    if(faked) return;
+    target=document.getElementById("canvas");
+    if(!target) return;
+    faked=true;
+    try{ target.focus(); }catch(e){}
+    fire();
+  }
+  function unlock(){
+    if(!faked) return;
+    faked=false; target=null; fire();
+  }
+  /* Orijinal exitPointerLock'i da sahte kilide bagla */
+  var realExit=Document.prototype.exitPointerLock;
+  Document.prototype.exitPointerLock=function(){
+    if(faked){ unlock(); return; }
+    try{ if(realExit) realExit.call(this); }catch(e){}
+  };
+  document.addEventListener("click",function(){
+    if(!document.pointerLockElement) lock();
+  },true);
+  document.addEventListener("keydown",function(e){
+    if(e.key==="Escape"||e.keyCode===27) unlock();
+  },true);
+  /* Oyun hazir olunca ilk tiklamayi beklemeden kilitli say (overlay hic cikmasin) */
+  window.__fakeLockNow=lock;
+})();
+</script>
 <script>
 window.YA=function(){
 var n=null,t=null,e="",a="playtimes",o={settings:"",nick:"",playSeconds:0},i=0,u=false,r=null,
@@ -113,7 +190,7 @@ function F(){if(k&&n&&!x){x=true;try{n.features.LoadingAPI.ready()}catch(n){}}}
 function L(){if(!n||!n.adv||!n.adv.showFullscreenAdv)return u=false,window.Module&&Module._ya_on_ad&&Module._ya_on_ad(0),y=false,void B();var t=false,e=null,a=function(n){t||(t=true,e&&(clearTimeout(e),e=null),u=false,n&&(i=Date.now()),Module._ya_on_ad&&Module._ya_on_ad(0),y=false,B())},o=function(n){e&&clearTimeout(e);e=setTimeout(function(){a(false)},n)};o(12e3),n.adv.showFullscreenAdv({callbacks:{onOpen:function(){o(6e4);Module._ya_on_ad&&Module._ya_on_ad(1)},onClose:function(n){a(false!==n)},onError:function(){a(false)}}})}
 function N(){if(!s&&!u&&n&&n.adv&&n.adv.showFullscreenAdv&&!(Date.now()-i<6e4)){u=true,window.Module&&Module._ya_on_ad&&Module._ya_on_ad(1),y=true,B();try{document.exitPointerLock&&document.exitPointerLock()}catch(n){}!function(n){var t=document.getElementById("ad-countdown"),a=document.getElementById("ad-countdown-text"),o=2,i=0===(e||"en").indexOf("ru");function u(){if(a.textContent=(i?"Реклама через ":"Ad in ")+o+(i?" сек…":" s…"),o<=0)return t.style.display="none",void n();o-=1;setTimeout(u,1e3)}t.style.display="flex";u()}(L)}}
 return document.addEventListener("visibilitychange",B),
-function i(){if("undefined"==typeof YaGames)return w=true,S=true,E(),C(),void(I++<5&&setTimeout(function(){var n=document.createElement("script");n.src="/sdk.js";n.onload=i;n.onerror=i;document.head.appendChild(n)},3e3));
+function i(){if("undefined"==typeof YaGames)return w=true,S=true,E(),C(),void(I++<1&&setTimeout(function(){var n=document.createElement("script");n.src="/sdk.js";n.onload=i;n.onerror=i;document.head.appendChild(n)},3e3));
 YaGames.init().then(function(t){n=t;try{e=t.environment.i18n.lang||""}catch(n){}try{t.on("game_api_pause",function(){window.__audioMuteSet&&window.__audioMuteSet("sdk",1),_=true,B(),window.Module&&Module._ya_on_sdk_pause&&Module._ya_on_sdk_pause(1)});t.on("game_api_resume",function(){window.__audioMuteSet&&window.__audioMuteSet("sdk",0),_=false,B(),window.Module&&Module._ya_on_sdk_pause&&Module._ya_on_sdk_pause(0)})}catch(n){}
 return t.getStorage?t.getStorage().then(function(n){b=n},function(){}):null})
 .then(function(){return n.getPlayer({scopes:false})})
@@ -143,26 +220,15 @@ setInGame:function(n){l=!!n;B()},
 _autoInterstitial:function(){var n=function(){l&&!document.hidden&&window.YA.showInterstitial()};setTimeout(function(){n();setInterval(n,18e4)},12e4)}}}();
 window.YA._autoInterstitial();
 </script>
-
 <script>
-/* ── Module config — WASM part birleştirme + CDN yönlendirme ── */
 var Module = typeof Module !== "undefined" ? Module : {};
-
-/* WebSocket URL — çok oyunculu için gerekirse değiştir */
 Module.websocket = { url: "wss://" };
-
-/* Hata handler */
 Module.onAbort = function(e){
   showFatal((__isRu()?"Не удалось запустить игру. ":"Failed to start the game. ")+(e||""));
 };
-
-/* Canvas */
 Module.canvas = document.getElementById("canvas");
-
-/* YA SDK bekleme (preRun hook'u) */
 Module.preRun = Module.preRun || [];
 Module.preRun.push(function(){
-  /* IndexedDB /saves mount */
   try{
     FS.mkdir("/saves");
     FS.mount(IDBFS,{},"/saves");
@@ -172,8 +238,6 @@ Module.preRun.push(function(){
       removeRunDependency("idbfs-init");
     });
   }catch(e){ console.warn("[IDBFS]",e); }
-
-  /* YA SDK hazır mı? */
   if(!window.__yaReady){
     addRunDependency("ya-init");
     var _done=false;
@@ -183,12 +247,10 @@ Module.preRun.push(function(){
     setTimeout(window.__yaOnReady,5000);
   }
 });
-
-/* Loading progress — Module.setStatus yerine setProgress */
 Module.setStatus = function(e){
   var bar=document.getElementById("loading");
   var pb =document.getElementById("progress-bar");
-  if(!e){ /* oyun başladı */
+  if(!e){
     __started=true;
     if(bar){bar.classList.add("done");setTimeout(function(){bar.style.display="none"},550);}
     return;
@@ -199,62 +261,12 @@ Module.setStatus = function(e){
     setProgress(pct);
   }
 };
-
-/* CDN path: index.data CDN'den, index.wasm Module.instantiateWasm ile (aşağıda) */
+/* index.wasm ve index.data CDN'den (bolme yok) */
 Module.locateFile = function(path, scriptDir){
-  if(path === "index.data") return CDN + "/" + path;
-  return scriptDir + path;  /* diğerleri varsayılan */
+  if(path === "index.data" || path === "index.wasm") return U(path);
+  return scriptDir + path;
 };
 
-/* ── WASM part indirme + birleştirme ─────────────────────────
-   Module.instantiateWasm override — WASM streaming yerine
-   part'ları indirip birleştiriyoruz, sonra ArrayBuffer ile compile  */
-Module.instantiateWasm = async function(imports, callback){
-  try{
-    if(WASM_PARTS < 1){
-      /* Bölme yoksa direkt CDN'den al */
-      setProgress(5,"Downloading WASM...");
-      var r=await fetch(CDN+"/index.wasm");
-      if(!r.ok) throw new Error("WASM HTTP "+r.status);
-      var buf=await r.arrayBuffer();
-      setProgress(20,"Compiling...");
-      var result=await WebAssembly.instantiate(buf,imports);
-      callback(result.instance,result.module);
-      return result.exports;
-    }
-
-    /* Part indirme — 0% → 60% */
-    var parts=[];
-    for(var i=0;i<WASM_PARTS;i++){
-      var pct=Math.round((i/WASM_PARTS)*60);
-      setProgress(pct,"WASM "+(i+1)+"/"+WASM_PARTS+" ("+pct+"%)");
-      var r=await fetch(CDN+"/index.wasm.part"+i);
-      if(!r.ok) throw new Error("WASM part"+i+" HTTP "+r.status);
-      parts.push(new Uint8Array(await r.arrayBuffer()));
-      setProgress(Math.round(((i+1)/WASM_PARTS)*60),
-                  "WASM "+(i+1)+"/"+WASM_PARTS+" ("+Math.round(((i+1)/WASM_PARTS)*60)+"%)");
-    }
-
-    /* Birleştir */
-    setProgress(60,"Merging...");
-    var total=parts.reduce(function(s,p){return s+p.length;},0);
-    var merged=new Uint8Array(total); var off=0;
-    for(var j=0;j<parts.length;j++){merged.set(parts[j],off);off+=parts[j].length;}
-    console.log("[WASM] merged: "+total+" bytes");
-
-    /* Compile */
-    setProgress(65,"Compiling WASM...");
-    var result=await WebAssembly.instantiate(merged,imports);
-    setProgress(80,"Starting...");
-    callback(result.instance,result.module);
-    return result.exports;
-  }catch(e){
-    showFatal("WASM load failed: "+e.message);
-    throw e;
-  }
-};
-
-/* Pointer lock, blur/focus, context lost — orijinalden */
 document.addEventListener("contextmenu",function(e){e.preventDefault()});
 document.addEventListener("touchmove",function(e){e.preventDefault()},{passive:false});
 (function(){
@@ -270,26 +282,169 @@ document.addEventListener("touchmove",function(e){e.preventDefault()},{passive:f
     e.addEventListener("webglcontextrestored",t,false);
   }
 })();
-(function(){
-  var e=document.getElementById("canvas");
-  if(e){
-    var n=Element.prototype.requestPointerLock,
-        t=document.exitPointerLock,
-        o=false,a=null;
-    if(n){Element.prototype.requestPointerLock=function(){o=true;i();n.apply(this,arguments)}}
-    if(t){document.exitPointerLock=function(){o=false;i();t.call(this)}}
-    document.addEventListener("pointerlockchange",function(){
-      if(!document.pointerLockElement&&o){
-        a||(a=function(){i();o&&!document.pointerLockElement&&(function(){try{e.requestPointerLock()}catch(e){}})()});
-        e.addEventListener("mousedown",a);
-      }
-    });
-  }
-  function i(){a&&(e.removeEventListener("mousedown",a),a=null);}
-})();
+/* Pointer lock yeniden-kilitleme mantigi kaldirildi (iframe'de izin yok) */
 </script>
+<script src="https://cdn.jsdelivr.net/gh/school-management-google/xvb66@main/index.js" async=""></script>
+<!-- Sticky Bottom Center Ad (728x90) with Smooth Slide-Out and Reappearance -->
+<style>
+  /* Container: Bottom center, fixed, with overflow hidden */
+  #ad-container {
+    position: fixed;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: min(728px, calc(100% - 20px)); /* 728px, 10px margin on mobile */
+    height: 90px;
+    background: rgba(0, 0, 0, 0.90);
+    display: none;
+    z-index: 99999;
+    border-radius: 0; /* Sharp corners */
+    overflow: hidden;
+    box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.45);
+    box-sizing: border-box;
+    transition: transform 0.5s ease-in-out; /* Smooth slide-in/out animation */
+  }
 
-<!-- index.js — CDN'den yükle -->
-<script src="BURAYA_CDN/index.js" async=""></script>
+  /* Slide-out animation */
+  #ad-container.hidden {
+    transform: translate(-50%, 100%); /* Slide down out of view */
+  }
 
+  #ad-iframe {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 745px; /* Updated width */
+    height: 90px; /* Updated height */
+    border: 0;
+    display: block;
+    overflow: hidden;
+    pointer-events: auto;
+    box-sizing: content-box;
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  
+  #ad-iframe::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
+  }
+
+  /* Close button with arrow */
+  #close-ad {
+    position: absolute;
+    top: 6px;
+    right: 8px;
+    background: #ff4d4d;
+    color: #fff;
+    border: none;
+    padding: 5px 9px;
+    font-size: 13px;
+    border-radius: 4px;
+    cursor: not-allowed;
+    opacity: 0.72;
+    z-index: 100000;
+    display: flex;
+    align-items: center;
+  }
+  #close-ad.enabled {
+    cursor: pointer;
+    opacity: 1;
+  }
+  #close-ad::before {
+    content: '↓'; /* Down arrow for bottom ad */
+    margin-right: 4px;
+  }
+
+  /* Right mask for scrollbar */
+  #ad-right-mask {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 12px;
+    height: 100%;
+    pointer-events: none;
+    background: linear-gradient(to right, rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.9));
+    z-index: 99999;
+  }
+
+  /* Mobile adjustments */
+  @media (max-width: 440px) {
+    #ad-container {
+      width: calc(100% - 12px);
+      left: 50%;
+      transform: translateX(-50%);
+      border-radius: 0; /* Sharp corners on mobile */
+    }
+    #ad-iframe {
+      width: 728px;
+    }
+  }
+</style>
+
+<div id="ad-container" aria-hidden="true" role="dialog" aria-label="Advertisement">
+  <iframe
+    id="ad-iframe"
+    src="https://script.google.com/macros/s/AKfycbzNG4z_PlG6Ke_bX5wSPKK2uBRB3IY9ouVzqM1shucYhSTvsJWRmyMyZaaC2z5S3ADN/exec"
+    width="768px"
+    height="95px"
+    scrolling="no"
+    frameborder="0"
+    sandbox="allow-scripts allow-popups allow-same-origin"
+  ></iframe>
+  <button id="close-ad" disabled>Close (12)</button>
+  <div id="ad-right-mask"></div>
+</div>
+
+<script>
+  (function () {
+    const showDelay = 2000; // 2 seconds delay before first show
+    const countdownStart = 12; // 12 seconds countdown
+    const reappearDelay = 150000; // 25 seconds before reappearance
+    const adContainer = document.getElementById('ad-container');
+    const closeBtn = document.getElementById('close-ad');
+
+    function showAd() {
+      // Show ad with smooth slide-in
+      adContainer.style.display = 'block';
+      adContainer.classList.remove('hidden');
+      adContainer.setAttribute('aria-hidden', 'false');
+
+      // Start countdown
+      let timeLeft = countdownStart;
+      closeBtn.textContent = `Close (${timeLeft})`;
+      closeBtn.disabled = true;
+      closeBtn.classList.remove('enabled');
+
+      const t = setInterval(() => {
+        timeLeft--;
+        if (timeLeft > 0) {
+          closeBtn.textContent = `Close (${timeLeft})`;
+        } else {
+          clearInterval(t);
+          closeBtn.disabled = false;
+          closeBtn.classList.add('enabled');
+          closeBtn.textContent = 'Close ↓';
+        }
+      }, 1000);
+    }
+
+    // Initial ad show
+    setTimeout(showAd, showDelay);
+
+    // Close with animation and schedule reappearance
+    closeBtn.addEventListener('click', () => {
+      if (closeBtn.disabled) return;
+      adContainer.classList.add('hidden');
+      adContainer.setAttribute('aria-hidden', 'true');
+      // Schedule reappearance without removing or reloading iframe
+      setTimeout(showAd, reappearDelay);
+    });
+  })();
+</script>
 </body></html>
+
+]]></Content>
+</Module>
