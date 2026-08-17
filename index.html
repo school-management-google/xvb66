@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" name="viewport"/>
+<script src="/sdk.js"></script>
+<title>Cube Online</title>
+<style>
+body,html{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:#000;
+  overscroll-behavior:none;touch-action:none;user-select:none;-webkit-user-select:none}
+body{display:flex;justify-content:center;align-items:center}
+#canvas{width:100%;height:100%;display:block;touch-action:none;
+  -webkit-tap-highlight-color:transparent;outline:0}
+
+/* Loading screen */
+#loading{position:fixed;inset:0;width:100%;height:100%;display:flex;flex-direction:column;
+  justify-content:center;align-items:center;z-index:10;touch-action:none;overflow:hidden;
+  background:repeating-linear-gradient(0deg,rgba(255,255,255,.012) 0 2px,transparent 2px 4px),
+             linear-gradient(180deg,#7bb6e8 0,#9fcdf0 45%,#c9def0 100%);
+  image-rendering:pixelated;transition:opacity .5s ease}
+#loading.done{opacity:0;pointer-events:none}
+#loading::before{content:"";position:absolute;top:16%;left:50%;transform:translateX(-50%);
+  width:80px;height:80px;background:#fff3c4;
+  box-shadow:0 0 0 10px rgba(255,243,196,.35),0 0 60px 20px rgba(255,243,196,.45);
+  animation:sunBob 4s ease-in-out infinite;pointer-events:none}
+@keyframes sunBob{0%,100%{transform:translateX(-50%) translateY(0)}
+                  50%{transform:translateX(-50%) translateY(-8px)}}
+#progress-bar-wrap{position:relative;width:240px;height:18px;background:#2b2018;
+  border:3px solid #1a120c;box-shadow:inset 0 0 0 3px #4a382a,0 4px 0 rgba(0,0,0,.25);
+  image-rendering:pixelated}
+#progress-bar{height:100%;width:0%;
+  background:repeating-linear-gradient(90deg,#7ec850 0 12px,#6fb840 12px 24px);
+  transition:width .25s steps(8);
+  box-shadow:inset 0 -4px 0 rgba(0,0,0,.22),inset 0 4px 0 rgba(255,255,255,.18)}
+#progress-pct{margin-top:16px;font:700 16px/1 ui-monospace,Consolas,monospace;
+  letter-spacing:3px;color:#fffef2;text-shadow:2px 2px 0 #3a2a1a,0 0 12px rgba(0,0,0,.4)}
+#ad-countdown{position:fixed;inset:0;z-index:20;display:none;align-items:center;
+  justify-content:center;background:rgba(0,0,0,.82);color:#fffef2;
+  font:700 28px/1.4 ui-monospace,Consolas,monospace;text-align:center;letter-spacing:2px}
+</style>
+</head><body>
+
+<div id="loading">
+  <div id="progress-bar-wrap"><div id="progress-bar"></div></div>
+  <div id="progress-pct">0%</div>
+</div>
+<div id="ad-countdown"><span id="ad-countdown-text"></span></div>
+<canvas id="canvas" oncontextmenu="event.preventDefault()"></canvas>
+
+<script>
+/* ── CDN ── değiştir ──────────────────────────── */
+var CDN        = "BURAYA_CDN";  /* https://cdn.jsdelivr.net/gh/user/repo@hash */
+var WASM_PARTS = 6;  /* 45.8MB / 8MB = 6 parts */             /* PS1 çalıştırınca kaç part yazdıysa onu yaz */
+
+/* ── Yardımcılar ─────────────────────────────── */
+var __fatalShown=false, __started=false;
+function __isRu(){ return "ru"===(navigator.language||"en").slice(0,2); }
+function showFatal(e){
+  if(__fatalShown) return; __fatalShown=true;
+  var n=document.getElementById("loading"); if(n) n.style.display="none";
+  var t=document.createElement("div");
+  t.style.cssText="position:fixed;inset:0;z-index:100000;background:#1a1410;color:#fffef2;"+
+    "display:flex;flex-direction:column;align-items:center;justify-content:center;"+
+    "text-align:center;padding:24px;gap:20px;font:600 4.5vw/1.5 sans-serif;";
+  t.innerHTML="<div>"+e+"</div>";
+  var o=document.createElement("button");
+  o.textContent=__isRu()?"Обновить":"Reload";
+  o.style.cssText="font:700 4vw sans-serif;padding:10px 30px;border:0;border-radius:8px;"+
+    "background:#7ec850;color:#10240a;cursor:pointer;";
+  o.onclick=function(){location.reload()};
+  t.appendChild(o); document.body.appendChild(t);
+}
+function setProgress(pct,label){
+  var b=document.getElementById("progress-bar");
+  var p=document.getElementById("progress-pct");
+  if(b) b.style.width=pct+"%";
+  if(p) p.textContent=(label||Math.round(pct)+"%");
+}
+document.title=__isRu()?"Куб Онлайн":"Cube Online";
+(function(){
+  var e=false;
+  try{var n=document.createElement("canvas");
+    e=!(!window.WebGLRenderingContext||!n.getContext("webgl2")&&!n.getContext("webgl"));}
+  catch(e){}
+  if(!e) showFatal(__isRu()
+    ?"Ваш браузер не поддерживает WebGL — игра не запустится."
+    :"Your browser does not support WebGL — the game cannot run.");
+})();
+window.addEventListener("error",function(e){
+  var n=e&&e.message||"";
+  if(!/unwind|SimulateInfiniteLoop/i.test(n))
+    showFatal(__isRu()?"Не удалось загрузить игру. Проверьте соединение и обновите страницу."
+                      :"Failed to load the game. Check your connection and reload.");
+});
+</script>
+
+<!-- window.YA — reklam, kayıt, liderboard sistemi (orijinalden aynen) -->
+<script>
+window.YA=function(){
+var n=null,t=null,e="",a="playtimes",o={settings:"",nick:"",playSeconds:0},i=0,u=false,r=null,
+    c=false,d="",l=false,s=false,f=31622400,y=false,_=false,h=false,v=false,w=false,
+    m=0,g=0,p=0,M="",A=0,S=false,b=null,I=0,k=false,x=false;
+function O(n){try{if(b)return b.getItem(n)}catch(n){}try{return localStorage.getItem(n)}catch(n){}return null}
+function D(n,t){try{if(b)return void b.setItem(n,t)}catch(n){}try{localStorage.setItem(n,t)}catch(n){}}
+function Y(){try{return!!t&&("function"==typeof t.isAuthorized?true===t.isAuthorized():!(!t.getMode||"lite"===t.getMode()))}catch(n){return false}}
+function B(){var t=l&&!y&&!_&&!document.hidden,e=function(){try{return n&&n.features&&n.features.GameplayAPI}catch(n){return null}}();if(e&&t!==h){h=t;try{t?e.start():e.stop()}catch(n){}}}
+function E(){r||(m=Math.min(Math.max(0,0|o.playSeconds),f),g=Date.now(),r=setInterval(function(){"visible"===document.visibilityState&&(v||(o.playSeconds+=1,o.playSeconds%60==0&&(P(),R())))},1e3))}
+function T(n){n=Math.max(0,0|n);var t=m+Math.floor((Date.now()-g)/1e3)+5;return Math.min(n,t,f)}
+function G(){try{if(n&&n.leaderboards&&n.leaderboards.setScore)return n.leaderboards}catch(n){}return null}
+function P(){t&&Y()?t.setData(o,true).catch(function(n){console.warn("[YA] setData",n)}):D("ya_data",JSON.stringify(o))}
+function R(){var n=G();if(n){var t=Math.max(T(o.playSeconds),A);try{n.setScore(a,t).catch(function(n){console.warn("[YA] lb",n)})}catch(n){console.warn("[YA] lb",n)}}}
+function C(){if(window.__yaReady=true,window.__yaOnReady){var n=window.__yaOnReady;window.__yaOnReady=null;n()}}
+function F(){if(k&&n&&!x){x=true;try{n.features.LoadingAPI.ready()}catch(n){}}}
+function L(){if(!n||!n.adv||!n.adv.showFullscreenAdv)return u=false,window.Module&&Module._ya_on_ad&&Module._ya_on_ad(0),y=false,void B();var t=false,e=null,a=function(n){t||(t=true,e&&(clearTimeout(e),e=null),u=false,n&&(i=Date.now()),Module._ya_on_ad&&Module._ya_on_ad(0),y=false,B())},o=function(n){e&&clearTimeout(e);e=setTimeout(function(){a(false)},n)};o(12e3),n.adv.showFullscreenAdv({callbacks:{onOpen:function(){o(6e4);Module._ya_on_ad&&Module._ya_on_ad(1)},onClose:function(n){a(false!==n)},onError:function(){a(false)}}})}
+function N(){if(!s&&!u&&n&&n.adv&&n.adv.showFullscreenAdv&&!(Date.now()-i<6e4)){u=true,window.Module&&Module._ya_on_ad&&Module._ya_on_ad(1),y=true,B();try{document.exitPointerLock&&document.exitPointerLock()}catch(n){}!function(n){var t=document.getElementById("ad-countdown"),a=document.getElementById("ad-countdown-text"),o=2,i=0===(e||"en").indexOf("ru");function u(){if(a.textContent=(i?"Реклама через ":"Ad in ")+o+(i?" сек…":" s…"),o<=0)return t.style.display="none",void n();o-=1;setTimeout(u,1e3)}t.style.display="flex";u()}(L)}}
+return document.addEventListener("visibilitychange",B),
+function i(){if("undefined"==typeof YaGames)return w=true,S=true,E(),C(),void(I++<5&&setTimeout(function(){var n=document.createElement("script");n.src="/sdk.js";n.onload=i;n.onerror=i;document.head.appendChild(n)},3e3));
+YaGames.init().then(function(t){n=t;try{e=t.environment.i18n.lang||""}catch(n){}try{t.on("game_api_pause",function(){window.__audioMuteSet&&window.__audioMuteSet("sdk",1),_=true,B(),window.Module&&Module._ya_on_sdk_pause&&Module._ya_on_sdk_pause(1)});t.on("game_api_resume",function(){window.__audioMuteSet&&window.__audioMuteSet("sdk",0),_=false,B(),window.Module&&Module._ya_on_sdk_pause&&Module._ya_on_sdk_pause(0)})}catch(n){}
+return t.getStorage?t.getStorage().then(function(n){b=n},function(){}):null})
+.then(function(){return n.getPlayer({scopes:false})})
+.then(function(n){if(t=n,Y())return t.getData().then(function(n){n&&(o=Object.assign(o,n))});try{var e=O("ya_data");e&&(o=Object.assign(o,JSON.parse(e)))}catch(n){}})
+.catch(function(n){console.warn("[YA] init failed, fallback",n)})
+.finally(function(){var t;p=Math.min(Math.max(0,0|o.playSeconds),f),M=o.pt_sig||"",w=true,
+(t=G())?t.getPlayerEntry(a).then(function(n){var t=0|(n&&n.score);A=Math.min(Math.max(0,t),f)}).catch(function(){}).finally(function(){S=true}):S=true,
+F(),E(),c&&n&&n.adv.showBannerAdv&&n.adv.showBannerAdv(),B(),C()})}(),
+{loadingReady:function(){k=true;F()},
+getLang:function(){return e||(navigator.language||"").slice(0,2)},
+getClientId:function(){return Y()?t.getUniqueID():""},
+getOldClientId:function(){if(!Y())return"";var n=O("clientId")||"";return n&&n!==t.getUniqueID()?n:""},
+kvGet:function(n){return O(n)},kvSet:function(n,t){D(n,t)},
+showInterstitial:function(){N()},showRespawnAd:function(){N()},
+setAdSuppress:function(n){s=!!n},
+banner:function(t){c=t;n&&(t?n.adv.showBannerAdv&&n.adv.showBannerAdv():n.adv.hideBannerAdv&&n.adv.hideBannerAdv())},
+save:function(n){o.settings=n||"";try{var t=JSON.parse(n).nick;t&&(o.nick=t)}catch(n){}P()},
+load:function(){return o.settings||""},
+lbBase:function(){return w?p:-1},lbSig:function(){return M||""},lbFloor:function(){return S?A:-1},
+lbActivate:function(n){m=Math.min(Math.max(0,0|n),f);o.playSeconds=m;o.pt_sig="";g=Date.now();v=true},
+lbSubmit:function(n,t){var e=T(n);o.playSeconds=e;o.pt_sig=e===(0|n)&&t||"";R();P()},
+lbFetch:function(){var n=G();n?n.getEntries(a,{quantityTop:10,includeUser:true,quantityAround:0})
+  .then(function(n){var t="";(n.entries||[]).forEach(function(n){var e=n.player&&n.player.publicName?n.player.publicName:"";e=e?e.replace(/[|\n]/g," "):"—";t+=n.rank+"|"+e+"|"+n.score+"\n"});d=t})
+  .catch(function(n){console.warn("[YA] lb entries",n);d=""}):d=""},
+lbGet:function(){return d},
+setInGame:function(n){l=!!n;B()},
+_autoInterstitial:function(){var n=function(){l&&!document.hidden&&window.YA.showInterstitial()};setTimeout(function(){n();setInterval(n,18e4)},12e4)}}}();
+window.YA._autoInterstitial();
+</script>
+
+<script>
+/* ── Module config — WASM part birleştirme + CDN yönlendirme ── */
+var Module = typeof Module !== "undefined" ? Module : {};
+
+/* WebSocket URL — çok oyunculu için gerekirse değiştir */
+Module.websocket = { url: "wss://" };
+
+/* Hata handler */
+Module.onAbort = function(e){
+  showFatal((__isRu()?"Не удалось запустить игру. ":"Failed to start the game. ")+(e||""));
+};
+
+/* Canvas */
+Module.canvas = document.getElementById("canvas");
+
+/* YA SDK bekleme (preRun hook'u) */
+Module.preRun = Module.preRun || [];
+Module.preRun.push(function(){
+  /* IndexedDB /saves mount */
+  try{
+    FS.mkdir("/saves");
+    FS.mount(IDBFS,{},"/saves");
+    addRunDependency("idbfs-init");
+    FS.syncfs(true,function(e){
+      if(e) console.error("[Game] initial load error:",e);
+      removeRunDependency("idbfs-init");
+    });
+  }catch(e){ console.warn("[IDBFS]",e); }
+
+  /* YA SDK hazır mı? */
+  if(!window.__yaReady){
+    addRunDependency("ya-init");
+    var _done=false;
+    window.__yaOnReady=function(){
+      if(!_done){_done=true;removeRunDependency("ya-init");}
+    };
+    setTimeout(window.__yaOnReady,5000);
+  }
+});
+
+/* Loading progress — Module.setStatus yerine setProgress */
+Module.setStatus = function(e){
+  var bar=document.getElementById("loading");
+  var pb =document.getElementById("progress-bar");
+  if(!e){ /* oyun başladı */
+    __started=true;
+    if(bar){bar.classList.add("done");setTimeout(function(){bar.style.display="none"},550);}
+    return;
+  }
+  var m=e.match(/(\d+)\s*\/\s*(\d+)/);
+  if(m&&pb){
+    var pct=Math.min(100,Math.round(100*parseInt(m[1])/parseInt(m[2])));
+    setProgress(pct);
+  }
+};
+
+/* CDN path: index.data CDN'den, index.wasm Module.instantiateWasm ile (aşağıda) */
+Module.locateFile = function(path, scriptDir){
+  if(path === "index.data") return CDN + "/" + path;
+  return scriptDir + path;  /* diğerleri varsayılan */
+};
+
+/* ── WASM part indirme + birleştirme ─────────────────────────
+   Module.instantiateWasm override — WASM streaming yerine
+   part'ları indirip birleştiriyoruz, sonra ArrayBuffer ile compile  */
+Module.instantiateWasm = async function(imports, callback){
+  try{
+    if(WASM_PARTS < 1){
+      /* Bölme yoksa direkt CDN'den al */
+      setProgress(5,"Downloading WASM...");
+      var r=await fetch(CDN+"/index.wasm");
+      if(!r.ok) throw new Error("WASM HTTP "+r.status);
+      var buf=await r.arrayBuffer();
+      setProgress(20,"Compiling...");
+      var result=await WebAssembly.instantiate(buf,imports);
+      callback(result.instance,result.module);
+      return result.exports;
+    }
+
+    /* Part indirme — 0% → 60% */
+    var parts=[];
+    for(var i=0;i<WASM_PARTS;i++){
+      var pct=Math.round((i/WASM_PARTS)*60);
+      setProgress(pct,"WASM "+(i+1)+"/"+WASM_PARTS+" ("+pct+"%)");
+      var r=await fetch(CDN+"/index.wasm.part"+i);
+      if(!r.ok) throw new Error("WASM part"+i+" HTTP "+r.status);
+      parts.push(new Uint8Array(await r.arrayBuffer()));
+      setProgress(Math.round(((i+1)/WASM_PARTS)*60),
+                  "WASM "+(i+1)+"/"+WASM_PARTS+" ("+Math.round(((i+1)/WASM_PARTS)*60)+"%)");
+    }
+
+    /* Birleştir */
+    setProgress(60,"Merging...");
+    var total=parts.reduce(function(s,p){return s+p.length;},0);
+    var merged=new Uint8Array(total); var off=0;
+    for(var j=0;j<parts.length;j++){merged.set(parts[j],off);off+=parts[j].length;}
+    console.log("[WASM] merged: "+total+" bytes");
+
+    /* Compile */
+    setProgress(65,"Compiling WASM...");
+    var result=await WebAssembly.instantiate(merged,imports);
+    setProgress(80,"Starting...");
+    callback(result.instance,result.module);
+    return result.exports;
+  }catch(e){
+    showFatal("WASM load failed: "+e.message);
+    throw e;
+  }
+};
+
+/* Pointer lock, blur/focus, context lost — orijinalden */
+document.addEventListener("contextmenu",function(e){e.preventDefault()});
+document.addEventListener("touchmove",function(e){e.preventDefault()},{passive:false});
+(function(){
+  var e=document.getElementById("canvas");
+  if(e){
+    var n=false,t=function(e){
+      if(e&&e.preventDefault(),!n){n=true;__fatalShown=true;
+        try{window.Module&&Module._web_save&&Module._web_save()}catch(e){}
+        setTimeout(function(){location.reload()},400);
+      }
+    };
+    e.addEventListener("webglcontextlost",t,false);
+    e.addEventListener("webglcontextrestored",t,false);
+  }
+})();
+(function(){
+  var e=document.getElementById("canvas");
+  if(e){
+    var n=Element.prototype.requestPointerLock,
+        t=document.exitPointerLock,
+        o=false,a=null;
+    if(n){Element.prototype.requestPointerLock=function(){o=true;i();n.apply(this,arguments)}}
+    if(t){document.exitPointerLock=function(){o=false;i();t.call(this)}}
+    document.addEventListener("pointerlockchange",function(){
+      if(!document.pointerLockElement&&o){
+        a||(a=function(){i();o&&!document.pointerLockElement&&(function(){try{e.requestPointerLock()}catch(e){}})()});
+        e.addEventListener("mousedown",a);
+      }
+    });
+  }
+  function i(){a&&(e.removeEventListener("mousedown",a),a=null);}
+})();
+</script>
+
+<!-- index.js — CDN'den yükle -->
+<script src="BURAYA_CDN/index.js" async=""></script>
+
+</body></html>
