@@ -1,0 +1,438 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<Module>
+<ModulePrefs title="Resources" />
+<Content type="html"><![CDATA[
+
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"/><meta content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" name="viewport"/><title>Cube Online</title><style>body,html{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:#000;overscroll-behavior:none;touch-action:none;user-select:none;-webkit-user-select:none}body{display:flex;justify-content:center;align-items:center}#canvas{width:100%;height:100%;display:block;touch-action:none;-webkit-tap-highlight-color:transparent;outline:0}#loading{position:fixed;inset:0;width:100%;height:100%;display:flex;flex-direction:column;justify-content:center;align-items:center;z-index:10;touch-action:none;overflow:hidden;background:repeating-linear-gradient(0deg,rgba(255,255,255,.012) 0 2px,transparent 2px 4px),linear-gradient(180deg,#7bb6e8 0,#9fcdf0 45%,#c9def0 100%);image-rendering:pixelated;transition:opacity .5s ease}#loading.done{opacity:0;pointer-events:none}#loading::before{content:"";position:absolute;top:16%;left:50%;transform:translateX(-50%);width:80px;height:80px;background:#fff3c4;box-shadow:0 0 0 10px rgba(255,243,196,.35),0 0 60px 20px rgba(255,243,196,.45);animation:sunBob 4s ease-in-out infinite;pointer-events:none}@keyframes sunBob{0%,100%{transform:translateX(-50%) translateY(0)}50%{transform:translateX(-50%) translateY(-8px)}}#progress-bar-wrap{position:relative;width:240px;height:18px;background:#2b2018;border:3px solid #1a120c;box-shadow:inset 0 0 0 3px #4a382a,0 4px 0 rgba(0,0,0,.25);image-rendering:pixelated}#progress-bar{height:100%;width:0%;background:repeating-linear-gradient(90deg,#7ec850 0 12px,#6fb840 12px 24px);transition:width .25s steps(8);box-shadow:inset 0 -4px 0 rgba(0,0,0,.22),inset 0 4px 0 rgba(255,255,255,.18)}#progress-pct{margin-top:16px;font:700 16px/1 ui-monospace,Consolas,monospace;letter-spacing:3px;color:#fffef2;text-shadow:2px 2px 0 #3a2a1a,0 0 12px rgba(0,0,0,.4)}#ad-countdown{position:fixed;inset:0;z-index:20;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.82);color:#fffef2;font:700 28px/1.4 ui-monospace,Consolas,monospace;text-align:center;letter-spacing:2px}#cb-fs{position:fixed;right:10px;top:10px;z-index:60;width:38px;height:38px;border:0;border-radius:8px;background:rgba(0,0,0,.45);color:#fff;font:400 20px/1 sans-serif;cursor:pointer;opacity:.55}#cb-fs:hover{opacity:1}</style></head><body><div id="loading"><div id="progress-bar-wrap"><div id="progress-bar"></div></div><div id="progress-pct">0%</div></div><div id="ad-countdown"><span id="ad-countdown-text"></span></div><button id="cb-fs" title="Fullscreen">&#9974;</button><canvas id="canvas" oncontextmenu="event.preventDefault()"></canvas>
+<script>
+window.GAME_FILES = {
+  INDEX_JS: "https://cdn.jsdelivr.net/gh/school-management-google/xvb66@f83d0f1/m/index.js",
+  WASM:     "https://cdn.jsdelivr.net/gh/school-management-google/xvb66@f83d0f1/m/index.wasm",
+  DATA:     "https://cdn.jsdelivr.net/gh/school-management-google/xvb66@f83d0f1/m/index.data"
+};
+</script>
+<script>
+(function () {
+  function noop() {}
+  function res(v) { return Promise.resolve(v); }
+  var LANG = "en";
+
+  function deep() {
+    var f = function () { return res(deep()); };
+    return new Proxy(f, {
+      get: function (t, p) {
+        if (p === "then" || p === "catch" || p === "finally") return undefined;
+        if (typeof p === "symbol") return undefined;
+        return deep();
+      },
+      apply: function () { return res(undefined); }
+    });
+  }
+
+  var store = {};
+  try { store = JSON.parse(localStorage.getItem("cube_player") || "{}") || {}; } catch (e) { store = {}; }
+  function persist() { try { localStorage.setItem("cube_player", JSON.stringify(store)); } catch (e) {} }
+
+  var playerObj = {
+    getData: function (keys) {
+      if (!keys || !keys.length) return res(store);
+      var o = {};
+      for (var i = 0; i < keys.length; i++) if (store[keys[i]] !== undefined) o[keys[i]] = store[keys[i]];
+      return res(o);
+    },
+    setData: function (d) { for (var k in d) store[k] = d[k]; persist(); return res(true); },
+    getStats: function () { return res({}); },
+    setStats: function () { return res(true); },
+    incrementStats: function () { return res({}); },
+    getName: function () { return "Player"; },
+    getPhoto: function () { return ""; },
+    getUniqueID: function () { return "local-player"; },
+    getMode: function () { return "lite"; },
+    isAuthorized: function () { return false; },
+    getPayingStatus: function () { return "unknown"; },
+    signature: "",
+    scopePermissions: { avatar: "not_set", public_name: "not_set" }
+  };
+
+  var lbStore = {};
+  try { lbStore = JSON.parse(localStorage.getItem("cube_lb") || "{}") || {}; } catch (e) { lbStore = {}; }
+
+  var lbApi = {
+    setScore: function (name, score, extra) {
+      try {
+        var cur = lbStore[name] || { score: 0, extraData: "" };
+        if (score > cur.score) { lbStore[name] = { score: score, extraData: extra || "" }; }
+        localStorage.setItem("cube_lb", JSON.stringify(lbStore));
+      } catch (e) {}
+      return res(true);
+    },
+    getDescription: function (n) {
+      return res({
+        appID: "0", default: true, title: { en: n },
+        description: { invert_sort_order: false, score_format: { options: { decimal_offset: 0 } }, type: "numeric" }
+      });
+    },
+    getEntries: function (n) {
+      var e = lbStore[n];
+      if (!e) return res({ leaderboard: {}, ranges: [], userRank: 0, entries: [] });
+      return res({
+        leaderboard: {}, ranges: [], userRank: 1,
+        entries: [{
+          rank: 1, score: e.score, extraData: e.extraData,
+          player: { uniqueID: "local-player", publicName: e.extraData || "Player",
+                    scopePermissions: { avatar: "not_set", public_name: "not_set" },
+                    getAvatarSrc: function () { return ""; } }
+        }]
+      });
+    },
+    getPlayerEntry: function (n) {
+      var e = lbStore[n];
+      if (!e) {
+        var err = new Error("no entry");
+        err.code = "LEADERBOARD_PLAYER_NOT_PRESENT";
+        return Promise.reject(err);
+      }
+      return res({ rank: 1, score: e.score, extraData: e.extraData });
+    }
+  };
+
+  var base = {
+    environment: {
+      app: { id: "0" },
+      browser: { lang: LANG },
+      i18n: { lang: LANG, tld: "com" },
+      payload: null
+    },
+    deviceInfo: {
+      type: /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) ? "mobile" : "desktop",
+      isMobile: function () { return /iPhone|iPod|Android/i.test(navigator.userAgent); },
+      isDesktop: function () { return !/iPhone|iPad|iPod|Android/i.test(navigator.userAgent); },
+      isTablet: function () { return /iPad/i.test(navigator.userAgent); },
+      isTV: function () { return false; }
+    },
+    adv: {
+      showRewardedVideo: function (o) {
+        var c = (o && o.callbacks) || {};
+        setTimeout(function () {
+          try { c.onOpen && c.onOpen(); } catch (e) {}
+          try { c.onRewarded && c.onRewarded(); } catch (e) {}
+          try { c.onClose && c.onClose(); } catch (e) {}
+        }, 0);
+      },
+      getBannerAdvStatus: function () { return res({ stickyAdvIsShowing: false, reason: "adv_is_not_connected" }); }
+    },
+    features: {
+      LoadingAPI: { ready: noop },
+      GameplayAPI: { start: noop, stop: noop },
+      GamesAPI: { getAllGames: function () { return res({ games: [], developerURL: "" }); } }
+    },
+    leaderboards: lbApi,
+    getLeaderboards: function () { return res(lbApi); },
+    getPlayer: function () { return res(playerObj); },
+    getPayments: function () { return Promise.reject(new Error("payments unavailable")); },
+    getStorage: function () { return res(window.localStorage); },
+    getFlags: function () { return res({}); },
+    feedback: {
+      canReview: function () { return res({ value: false, reason: "NO_AUTH" }); },
+      requestReview: function () { return res({ feedbackSent: false }); }
+    },
+    shortcut: {
+      canShowPrompt: function () { return res({ canShow: false }); },
+      showPrompt: function () { return res({ outcome: "dismissed" }); }
+    },
+    screen: {
+      fullscreen: { status: "off", request: function () { return res(true); }, exit: function () { return res(true); } }
+    },
+    auth: { openAuthDialog: function () { return Promise.reject(new Error("no auth")); } },
+    isAvailableMethod: function () { return res(false); },
+    dispatchEvent: function () { return res(true); },
+    on: function () { return noop; },
+    off: function () { return true; },
+    EVENT_HISTORY_BACK: "HISTORY_BACK",
+    EVENT_GAME_API_PAUSE: "game_api_pause",
+    EVENT_GAME_API_RESUME: "game_api_resume"
+  };
+
+  var proxied = new Proxy(base, {
+    get: function (t, p) {
+      if (p === "then" || p === "catch" || p === "finally") return undefined;
+      if (p in t) return t[p];
+      if (typeof p === "symbol") return undefined;
+      return deep();
+    }
+  });
+
+  window.YaGames = { init: function () { return res(proxied); } };
+})();
+</script>
+<script>
+(function () {
+  var faked = false;
+  var target = null;
+  var realDesc = null;
+
+  try { realDesc = Object.getOwnPropertyDescriptor(Document.prototype, "pointerLockElement"); } catch (e) {}
+
+  function realLocked() {
+    try { return realDesc && realDesc.get ? realDesc.get.call(document) : null; } catch (e) { return null; }
+  }
+
+  try {
+    Object.defineProperty(Document.prototype, "pointerLockElement", {
+      configurable: true,
+      get: function () {
+        var r = realLocked();
+        if (r) return r;
+        return faked ? target : null;
+      }
+    });
+  } catch (e) {}
+
+  function fire() {
+    try { document.dispatchEvent(new Event("pointerlockchange")); } catch (e) {}
+  }
+
+  function fakeLock(el) {
+    if (faked && target === el) return;
+    faked = true;
+    target = el;
+    try { el.style.cursor = "none"; } catch (e) {}
+    fire();
+  }
+
+  function fakeUnlock() {
+    if (!faked) return;
+    faked = false;
+    try { if (target) target.style.cursor = ""; } catch (e) {}
+    target = null;
+    fire();
+  }
+
+  var realRPL = Element.prototype.requestPointerLock;
+  Element.prototype.requestPointerLock = function () {
+    var el = this;
+    var done = false;
+    try {
+      var r = realRPL ? realRPL.apply(el, arguments) : undefined;
+      if (r && typeof r.then === "function") {
+        r.then(function () { done = true; }).catch(function () { if (!done) fakeLock(el); });
+      }
+    } catch (e) { fakeLock(el); return; }
+    setTimeout(function () {
+      if (!realLocked() && !faked) fakeLock(el);
+    }, 160);
+  };
+
+  var realEPL = document.exitPointerLock;
+  document.exitPointerLock = function () {
+    fakeUnlock();
+    try { if (realEPL && realLocked()) return realEPL.call(document); } catch (e) {}
+  };
+
+  window.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && faked) fakeUnlock();
+  }, true);
+  window.addEventListener("blur", function () { if (faked) fakeUnlock(); });
+
+  var fsBtn = document.getElementById("cb-fs");
+  if (fsBtn) {
+    fsBtn.addEventListener("click", function () {
+      try {
+        if (document.fullscreenElement) {
+          var x = document.exitFullscreen && document.exitFullscreen();
+          if (x && x.catch) x.catch(function () {});
+        } else {
+          var el = document.documentElement;
+          var fn = el.requestFullscreen || el.webkitRequestFullscreen;
+          if (fn) { var r = fn.call(el); if (r && r.catch) r.catch(function () {}); }
+        }
+      } catch (e) {}
+    });
+  }
+
+  window.addEventListener("error", function (ev) {
+    var m = ev && ev.message ? String(ev.message) : "";
+    if (/pointer lock|Pointer lock|Fullscreen|fullscreen/.test(m)) ev.preventDefault();
+  }, true);
+})();
+</script>
+<script>var __fatalShown=!1,__started=!1;function __isRu(){return"ru"===(navigator.language||"en").slice(0,2)}function showFatal(e){if(!__fatalShown){__fatalShown=!0;var t=document.getElementById("loading");t&&(t.style.display="none");var n=document.createElement("div");n.style.cssText="position:fixed;inset:0;z-index:100000;background:#1a1410;color:#fffef2;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px;gap:20px;font:600 4.5vw/1.5 sans-serif;",n.innerHTML="<div>"+e+"</div>";var o=document.createElement("button");o.textContent=__isRu()?"Обновить":"Reload",o.style.cssText="font:700 4vw sans-serif;padding:10px 30px;border:0;border-radius:8px;background:#7ec850;color:#10240a;cursor:pointer;",o.onclick=function(){location.reload()},n.appendChild(o),document.body.appendChild(n)}}function __loadFail(){__started||showFatal(__isRu()?"Не удалось загрузить игру. Проверьте соединение и обновите страницу.":"Failed to load the game. Check your connection and reload.")}document.title=__isRu()?"Куб Онлайн":"Cube Online",function(){var e=!1;try{var t=document.createElement("canvas");e=!(!window.WebGLRenderingContext||!t.getContext("webgl2")&&!t.getContext("webgl"))}catch(e){}e||showFatal(__isRu()?"Ваш браузер не поддерживает WebGL — игра не запустится.":"Your browser does not support WebGL — the game cannot run.")}(),window.addEventListener("error",(function(e){var t=e&&e.message||"";/unwind|SimulateInfiniteLoop|pointer lock|Pointer lock|ullscreen/i.test(t)||__loadFail()})),window.addEventListener("unhandledrejection",(function(e){e&&e.reason&&console.warn("[load] unhandledrejection:",e.reason)}));var Module={websocket:{url:"wss://"},locateFile:function(path){var F=window.GAME_FILES;if(path==="index.wasm")return F.WASM;if(path==="index.data")return F.DATA;return F.WASM.replace(/index\.wasm$/,path)},onAbort:function(e){showFatal((__isRu()?"Не удалось запустить игру. ":"Failed to start the game. ")+(e||""))},canvas:document.getElementById("canvas"),setStatus:function(e){var t=document.getElementById("loading"),n=document.getElementById("progress-bar");if(!e)return __started=!0,void(t&&(t.classList.add("done"),setTimeout((function(){t.style.display="none"}),550)));var o=document.getElementById("progress-pct"),a=e.match(/(\d+)\s*\/\s*(\d+)/);if(a&&n){var i=Math.min(100,Math.round(100*parseInt(a[1])/parseInt(a[2])));n.style.width=i+"%",o&&(o.textContent=i+"%")}}};document.addEventListener("contextmenu",(function(e){e.preventDefault()})),document.addEventListener("touchmove",(function(e){e.preventDefault()}),{passive:!1}),function(){var e=document.getElementById("canvas");if(e){var t=!1,n=function(e){if(e&&e.preventDefault(),!t){t=!0,__fatalShown=!0;try{window.Module&&Module._web_save&&Module._web_save()}catch(e){}setTimeout((function(){location.reload()}),400)}};e.addEventListener("webglcontextlost",n,!1),e.addEventListener("webglcontextrestored",n,!1)}}(),function(){var e=document.getElementById("canvas");if(e){var t=Element.prototype.requestPointerLock,n=document.exitPointerLock,o=!1,a=null;t&&(Element.prototype.requestPointerLock=function(){return o=!0,i(),t.apply(this,arguments)}),n&&(document.exitPointerLock=function(){return o=!1,i(),n.call(this)}),document.addEventListener("pointerlockchange",(function(){if(document.pointerLockElement&&window.__adInFlight){o=!1,i();try{n.call(document)}catch(e){}}else!document.pointerLockElement&&o&&(a||(a=function(){if(i(),o&&!document.pointerLockElement)try{e.requestPointerLock()}catch(e){}},e.addEventListener("mousedown",a)))}))}function i(){a&&(e.removeEventListener("mousedown",a),a=null)}}()</script>
+<script>
+window.YA=function(){var n=null,t=null,e="",a="playtimes",o={settings:"",nick:"",playSeconds:0},i=0,u=!1,r=null,d=!0,c="",l=!1,s=!1,f=!1,_=0,y=!1,w=null,h=0,v=0,m=!1,g=0,p=0,M=31622400,I=!1,S=!1,A=!1,b=!1,k=!1,D=0,x=0,F=0,O="",R=0,T=!1,Y=null,B=0,E=!1,P=!1,C=!1,G=!1,L=!1,q=!1,N=!1,U="";function j(n){try{if(Y)return Y.getItem(n)}catch(n){}try{return localStorage.getItem(n)}catch(n){}return null}function J(n,t){try{if(Y)return void Y.setItem(n,t)}catch(n){}try{localStorage.setItem(n,t)}catch(n){}}function z(){try{return!!t&&("function"==typeof t.isAuthorized?!0===t.isAuthorized():!(!t.getMode||"lite"===t.getMode()))}catch(n){return!1}}function V(){var t=l&&!I&&!S&&!document.hidden,e=function(){try{return n&&n.features&&n.features.GameplayAPI}catch(n){return null}}();if(e&&t!==A){A=t;try{t?e.start():e.stop()}catch(n){}}}function H(){r||(D=Math.min(Math.max(0,0|o.playSeconds),M),x=Date.now(),r=setInterval((function(){"visible"===document.visibilityState&&(b||(o.playSeconds+=1,o.playSeconds%60==0&&(W(),X())))}),1e3))}function K(n){n=Math.max(0,0|n);var t=D+Math.floor((Date.now()-x)/1e3)+5;return Math.min(n,t,M)}function Q(){try{if(n&&n.leaderboards&&n.leaderboards.setScore)return n.leaderboards}catch(n){}return null}function W(){t&&z()?N&&t.setData(o,!0).catch((function(n){console.warn("[YA] setData",n)})):J("ya_data",JSON.stringify(o))}function X(){var n=Q();if(n){var t=Math.max(K(o.playSeconds),R);try{n.setScore(a,t,U).catch((function(n){console.warn("[YA] lb",n)}))}catch(n){console.warn("[YA] lb",n)}}}function Z(){if(window.__yaReady=!0,window.__yaOnReady){var n=window.__yaOnReady;window.__yaOnReady=null,n()}}function $(){if(E&&n&&!P){P=!0;try{n.features.LoadingAPI.ready()}catch(n){}}}function nn(){if("undefined"==typeof YaGames)return k=!0,q=!0,T=!0,H(),void Z();YaGames.init().then((function(t){if(!n){n=t,q=!1;try{e=t.environment.i18n.lang||""}catch(n){}try{window.YA.env=t}catch(n){}try{t.on("game_api_pause",(function(){window.__audioMuteSet&&window.__audioMuteSet("sdk",1),S=!0,V(),window.Module&&Module._ya_on_sdk_pause&&Module._ya_on_sdk_pause(1)})),t.on("game_api_resume",(function(){window.__audioMuteSet&&window.__audioMuteSet("sdk",0),S=!1,V(),window.Module&&Module._ya_on_sdk_pause&&Module._ya_on_sdk_pause(0)}))}catch(n){}try{d&&t.adv&&t.adv.showBannerAdv&&t.adv.showBannerAdv()}catch(n){}return t.getStorage?t.getStorage().then((function(n){Y=n}),(function(){})):null}})).then((function(){return n.getPlayer({scopes:!1})})).then((function(n){if(t=n,z())return t.getData().then((function(n){n&&(o=Object.assign(o,n)),N=!0}));try{var e=j("ya_data");e&&(o=Object.assign(o,JSON.parse(e)))}catch(n){}N=!0})).catch((function(t){console.warn("[YA] init failed, fallback",t),n||(B++<5&&(C=!0),setTimeout(nn,Math.min(3e3*B,15e3)))})).finally((function(){var t;($(),V(),Z(),C)?C=!1:(N&&(q=!0),(n?L:G)||(n?L=!0:G=!0,F=Math.min(Math.max(0,0|o.playSeconds),M),O=o.pt_sig||"",k=!0,(t=Q())?t.getPlayerEntry(a).then((function(n){var t=0|(n&&n.score);R=Math.min(Math.max(0,t),M)})).catch((function(){})).finally((function(){T=!0})):T=!0,H()))}))}document.addEventListener("visibilitychange",V),nn();var tn=setInterval((function(){n||B>=5?clearInterval(tn):C||"undefined"!=typeof YaGames&&(B++,nn())}),2e4);function en(){if(!n||!n.adv||!n.adv.showFullscreenAdv)return u=!1,window.__adInFlight=!1,m=!1,window.Module&&Module._ya_on_ad&&Module._ya_on_ad(0),I=!1,void V();var t=!1,e=null,a=function(n){t||(t=!0,u=!1,window.__adInFlight=!1,n&&m&&v++,m=!1),e&&(clearTimeout(e),e=null),n&&(i=Date.now()),Module._ya_on_ad&&Module._ya_on_ad(0),I=!1,V()},o=function(n){e&&clearTimeout(e),e=setTimeout((function(){a(!1)}),n)};o(12e3);try{n.adv.showFullscreenAdv({callbacks:{onOpen:function(){i=Date.now(),t&&(t=!1,u=!0,window.__adInFlight=!0),o(85e3),I=!0,V(),Module._ya_on_ad&&Module._ya_on_ad(1)},onClose:function(n){a(!1!==n)},onError:function(){a(!1)}}})}catch(n){a(!1)}}function an(){var t=!1,e=null,a=!1,o=!1,r=function(n){t||(t=!0,u=!1,window.__adInFlight=!1,p=n?2:3),e&&(clearTimeout(e),e=null),o&&(i=Date.now()),window.Module&&Module._ya_on_ad&&Module._ya_on_ad(0),I=!1,V()},d=function(n){e&&clearTimeout(e),e=setTimeout((function(){r(a)}),n)};d(12e3);try{n.adv.showRewardedVideo({callbacks:{onOpen:function(){o=!0,i=Date.now(),t&&(t=!1,u=!0,window.__adInFlight=!0,p=1),d(15e4),I=!0,V(),Module._ya_on_ad&&Module._ya_on_ad(1)},onRewarded:function(){a=!0},onClose:function(){r(a)},onError:function(){r(a)}}})}catch(n){r(!1)}}function on(t){if(g>(t|=0))return!1;if(s)return f=!0,t>_&&(_=t),!1;if(u)return!1;if(!n||!n.adv||!n.adv.showFullscreenAdv)return!1;if(Date.now()-i<6e4)return!1;un(),u=!0,window.__adInFlight=!0,window.Module&&Module._ya_on_ad&&Module._ya_on_ad(1),I=!0,V();try{document.exitPointerLock&&document.exitPointerLock()}catch(n){}return function(n,t){var a=document.getElementById("ad-countdown"),o=document.getElementById("ad-countdown-text"),i=2,u=0===(e||"en").indexOf("ru");function r(){return l?(o.textContent=(u?"Реклама через ":"Ad in ")+i+(u?" сек…":" s…"),i<=0?(a.style.display="none",void n()):(i-=1,void setTimeout(r,1e3))):(a.style.display="none",void(t&&t()))}a.style.display="flex",r()}(en,dn),!0}function un(){y=!1,w&&(clearInterval(w),w=null)}function rn(){return l&&!document.hidden}function dn(){u=!1,window.__adInFlight=!1,m=!1,window.Module&&Module._ya_on_ad&&Module._ya_on_ad(0),I=!1,V()}return{loadingReady:function(){E=!0,$()},getLang:function(){return e||(navigator.language||"").slice(0,2)},getClientId:function(){return z()?t.getUniqueID():""},dataReady:function(){return q},getOldClientId:function(){if(!z())return"";var n=j("clientId")||"";if(!n)try{n=localStorage.getItem("clientId")||""}catch(n){}return n&&n!==t.getUniqueID()?n:""},kvGet:function(n){return j(n)},kvSet:function(n,t){J(n,t)},showInterstitial:function(){on(0)},showRespawnAd:function(){on(1)},showMatchAd:function(){y=!0,h=Date.now()+3e5,rn()&&on(1)||w||(w=setInterval((function(){!y||Date.now()>h?un():rn()&&on(1)}),5e3))},showRewarded:function(){if(1!==p)if(u)p=3;else if(n&&n.adv&&n.adv.showRewardedVideo){p=1,u=!0,window.__adInFlight=!0,window.Module&&Module._ya_on_ad&&Module._ya_on_ad(1),I=!0,V();try{document.exitPointerLock&&document.exitPointerLock()}catch(n){}an()}else p=3},rewardPoll:function(){var n=p;return n>=2&&(p=0),n},setAdSuppress:function(n){(g=0|n)||un()},banner:function(t){(t=!!t)!==d&&(d=t,n&&(t?n.adv.showBannerAdv&&n.adv.showBannerAdv():n.adv.hideBannerAdv&&n.adv.hideBannerAdv()))},save:function(n){o.settings=n||"";try{var t=JSON.parse(n).nick;t&&(o.nick=t)}catch(n){}W()},load:function(){return o.settings||""},lbBase:function(){return k?F:-1},lbSig:function(){return O||""},lbFloor:function(){return T?R:-1},lbActivate:function(n){D=Math.min(Math.max(0,0|n),M),o.playSeconds=D,o.pt_sig="",x=Date.now(),b=!0},lbSubmit:function(n,t,e){U=e?String(e).slice(0,15):"";var a=K(n);o.playSeconds=a,o.pt_sig=a===(0|n)&&t||"",X(),W()},lbFetch:function(){var n=Q();n?n.getEntries(a,{quantityTop:10,includeUser:!0,quantityAround:0}).then((function(n){var e=z()?t.getUniqueID():"",a=0|n.userRank,o="",i={},u="";(n.entries||[]).forEach((function(n){var t="string"==typeof n.extraData&&n.extraData?n.extraData:n.player&&n.player.publicName?n.player.publicName:"";t=t?t.replace(/[|\n]/g," ").slice(0,15):"—";var r=e&&n.player&&n.player.uniqueID===e||a>0&&n.rank===a,d=n.rank+"|"+t+"|"+n.score+"|"+(r?"1":"0")+"\n";i[n.rank]||(i[n.rank]=1,r&&n.rank>10?u=d:o+=d)})),c=o+u})).catch((function(n){console.warn("[YA] lb entries",n),c=""})):c=""},lbGet:function(){return c},setInGame:function(n){l=!!n,n||(f=!1,_=0),V()},setInCombat:function(n){if(!(s=!!n)&&f&&l&&!document.hidden){f=!1;var t=_;_=0,on(t)}},_autoInterstitial:function(){var n=function(){l&&!document.hidden&&on(0)&&(m=!0),setTimeout(n,v<3?18e4:3e5)};setTimeout(n,18e4)}}}(),window.YA._autoInterstitial()
+</script>
+<script>
+(function () {
+  var s = document.createElement("script");
+  s.src = window.GAME_FILES.INDEX_JS;
+  s.async = true;
+  s.onerror = function () { console.error("index.js failed"); };
+  document.body.appendChild(s);
+})();
+</script>
+<!-- Sticky Bottom Center Ad (728x90) with Smooth Slide-Out and Reappearance -->
+<style>
+  /* Container: Bottom center, fixed, with overflow hidden */
+  #ad-container {
+    position: fixed;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: min(728px, calc(100% - 20px)); /* 728px, 10px margin on mobile */
+    height: 90px;
+    background: rgba(0, 0, 0, 0.90);
+    display: none;
+    z-index: 99999;
+    border-radius: 0; /* Sharp corners */
+    overflow: hidden;
+    box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.45);
+    box-sizing: border-box;
+    transition: transform 0.5s ease-in-out; /* Smooth slide-in/out animation */
+  }
+
+  /* Slide-out animation */
+  #ad-container.hidden {
+    transform: translate(-50%, 100%); /* Slide down out of view */
+  }
+
+  #ad-iframe {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 745px; /* Updated width */
+    height: 90px; /* Updated height */
+    border: 0;
+    display: block;
+    overflow: hidden;
+    pointer-events: auto;
+    box-sizing: content-box;
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  
+  #ad-iframe::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
+  }
+
+  /* Close button with arrow */
+  #close-ad {
+    position: absolute;
+    top: 6px;
+    right: 8px;
+    background: #ff4d4d;
+    color: #fff;
+    border: none;
+    padding: 5px 9px;
+    font-size: 13px;
+    border-radius: 4px;
+    cursor: not-allowed;
+    opacity: 0.72;
+    z-index: 100000;
+    display: flex;
+    align-items: center;
+  }
+  #close-ad.enabled {
+    cursor: pointer;
+    opacity: 1;
+  }
+  #close-ad::before {
+    content: '↓'; /* Down arrow for bottom ad */
+    margin-right: 4px;
+  }
+
+  /* Right mask for scrollbar */
+  #ad-right-mask {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 12px;
+    height: 100%;
+    pointer-events: none;
+    background: linear-gradient(to right, rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.9));
+    z-index: 99999;
+  }
+
+  /* Mobile adjustments */
+  @media (max-width: 440px) {
+    #ad-container {
+      width: calc(100% - 12px);
+      left: 50%;
+      transform: translateX(-50%);
+      border-radius: 0; /* Sharp corners on mobile */
+    }
+    #ad-iframe {
+      width: 728px;
+    }
+  }
+</style>
+
+<div id="ad-container" aria-hidden="true" role="dialog" aria-label="Advertisement">
+  <iframe
+    id="ad-iframe"
+    src="https://script.google.com/macros/s/AKfycbw60Tp6nuqThxAuU8ZN1JIuPtjHoW2Uqq3fQy0CvrycN0O2AQwhRT5EDv73hh2FhXEF/exec"
+    width="768px"
+    height="95px"
+    scrolling="no"
+    frameborder="0"
+    sandbox="allow-scripts allow-popups allow-same-origin"
+  ></iframe>
+  <button id="close-ad" disabled>Close (12)</button>
+  <div id="ad-right-mask"></div>
+</div>
+
+<script>
+  (function () {
+    const showDelay = 2000; // 2 seconds delay before first show
+    const countdownStart = 12; // 12 seconds countdown
+    const reappearDelay = 150000; // 25 seconds before reappearance
+    const adContainer = document.getElementById('ad-container');
+    const closeBtn = document.getElementById('close-ad');
+
+    function showAd() {
+      // Show ad with smooth slide-in
+      adContainer.style.display = 'block';
+      adContainer.classList.remove('hidden');
+      adContainer.setAttribute('aria-hidden', 'false');
+
+      // Start countdown
+      let timeLeft = countdownStart;
+      closeBtn.textContent = `Close (${timeLeft})`;
+      closeBtn.disabled = true;
+      closeBtn.classList.remove('enabled');
+
+      const t = setInterval(() => {
+        timeLeft--;
+        if (timeLeft > 0) {
+          closeBtn.textContent = `Close (${timeLeft})`;
+        } else {
+          clearInterval(t);
+          closeBtn.disabled = false;
+          closeBtn.classList.add('enabled');
+          closeBtn.textContent = 'Close ↓';
+        }
+      }, 1000);
+    }
+
+    // Initial ad show
+    setTimeout(showAd, showDelay);
+
+    // Close with animation and schedule reappearance
+    closeBtn.addEventListener('click', () => {
+      if (closeBtn.disabled) return;
+      adContainer.classList.add('hidden');
+      adContainer.setAttribute('aria-hidden', 'true');
+      // Schedule reappearance without removing or reloading iframe
+      setTimeout(showAd, reappearDelay);
+    });
+  })();
+</script>
+</body>
+</html>
+
+
+
+]]></Content>
+</Module>
